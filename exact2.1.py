@@ -3,6 +3,17 @@ import numpy as np
 import math
 import time
 
+def min_index(li):
+    temp = li[0]
+    ans = 0
+    for i in range(len(li)):
+        if li[i] < temp:
+            temp = li[i]
+            ans = i
+    return ans
+
+
+
 def cispace(d,occ):
     #d: dim of spin-orbital
     #occ: num of electrons
@@ -103,15 +114,16 @@ def slater(a,b):
     else:
         return 0.0
 
+#input
 t1 = time.time()
-
 e1 = np.load("h1e.npy")
 d = e1.shape[0]
 s = 0
+
+# form cispace string
 index = []
 alpha = cispace(d, (d+s)/2)
 beta = cispace(d, (d-s)/2)
-
 for a in alpha:
     for b in beta:
         tmp = []
@@ -119,20 +131,47 @@ for a in alpha:
             tmp += [a[i]]
             tmp += [b[i]]
         index += [tmp]
-
 dim = len(index)
 ham = np.zeros((dim,dim))
 
+#form Hamitonian
 for i in range(dim):
     print i
     for j in range(i+1):
         ham[i][j] = slater(index[i],index[j])
         ham[j][i] = ham[i][j]
 
+#davidson diagonize
 en = min(np.linalg.eig(ham)[0])
-np.save("ham.npy",ham)
-t2 = time.time()
 
+#search space
+b0 = np.zeros(dim)
+b0[-1] = 1
+a0 = ham.dot(b0.T).T
+B = np.array([b0])
+A = np.array([a0])
+DA = np.array(B.dot(A.T).T)
+la = DA[0][0]
+al = array([1])
+while True:
+    qm = al.dot(A-la*B))
+    cov = np.linalg.norm(qm)
+    if cov < 1e-6:
+        break
+    qm = 1/cov * qm
+    ksi = (1.0/(la*ones(dim)-diag(ham))) * qm
+    for i in range(len(DA)):
+        M = np.eye(dim) - b[i:i+1].T.dot(b[i:i+1])
+        ksi = M.dot(ksi)
+    ksi = 1/np.linalg.norm(ksi) * ksi
+    b
+
+
+print la
+
+
+#output
+t2 = time.time()
 print en
 print t2-t1
 
