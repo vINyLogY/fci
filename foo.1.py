@@ -110,16 +110,12 @@ def slater(a,b,e1,e2):
 
 def davidson(H,V,err,maxIter):
     #initialization
-    dim =len(H)
+    dim = H.shape[0]
     numIter = 0
     last = 0.0
     Da = np.diag(H)
     HV = H.dot(V)
     A = V.T.dot(HV)
-    Orth = np.eye(dim)
-    for i in V.T:
-        Vi = i.reshape(dim,1)
-        Orth = Orth.dot(np.eye(dim)-Vi.dot(Vi.T))
 
     #iteration
     while numIter <= maxIter:
@@ -129,7 +125,7 @@ def davidson(H,V,err,maxIter):
             last = ritzVal
         numIter += 1
 
-        #form ritz value and ritz vector
+        #form ritz value and vector
         eigensolver = np.linalg.eig(A)
         ritzIndex = minIndex(eigensolver[0])
         ritzVal = eigensolver[0][ritzIndex]
@@ -142,17 +138,19 @@ def davidson(H,V,err,maxIter):
         conv1 = np.linalg.norm(resVec)
         if conv < err and conv > 0.0 - err:
             break
-        #print("conv: %f" % conv)
+        if conv1 < err:
+            break
+        #print("conv: %f" % conv1)
 
         #expand the search space
-        daVec = resVec / (ritzVal - Da)
-        daVec = Orth.dot(daVec)
+        daVec = resVec / (ritzVal - Da + 1.0e-5)
+        for i in V.T:
+            daVec -= i.dot(daVec) * i       
         daVec /= np.linalg.norm(daVec)
         Vi = daVec.reshape(dim,1)
         HVi = H.dot(Vi)
         Ai = V.T.dot(HVi)
         ai = Vi.T.dot(HVi)
-        Orth = Orth.dot(np.eye(dim)-Vi.dot(Vi.T))
         A = np.vstack([np.hstack([A, Ai]), np.hstack([Ai.T, ai])]) 
         V = np.hstack([V, Vi])
         HV = np.hstack([HV, HVi])
@@ -204,12 +202,12 @@ sdim = len(sindex)
 V = np.zeros((dim,sdim))
 for i in range(sdim):
     V[index.index(sindex[i])][i] = 1.0
-V1 = np.zeros((dim,3))
-for i in range(3):
+V1 = np.zeros((dim,1))
+for i in range(1):
     V1[-i-1][i] = 1.0
 
 #davidson algorithm
-ans = davidson(Ham, V1, 1.0e-9, dim)
+ans = davidson(Ham, V1, 1.0e-8, dim)
 
 #output
 print en
