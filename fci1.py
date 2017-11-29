@@ -1,4 +1,3 @@
-#!/usr/bin/env python
 import numpy as np
 import math
 import time
@@ -23,6 +22,65 @@ def cispace(d,occ):
         ans1 = [i + [1] for i in cispace(d-1,occ-1)]
         ans2 = [i + [0] for i in cispace(d-1,occ)]
         return ans1 + ans2
+
+def cispace_dense(d,occ):
+    #d: dim of spin-orbital
+    #occ: num of electrons
+    #return all bases of CI (in ONV)
+
+    ans = []
+    if occ == 1:
+        for i in range(d):
+            ans += [[i]]
+    else:
+        for i in cispace(d - 1, occ - 1):
+            last = i[-1] + 1
+            for j in range(d - last):
+                ans += [i + [j + last]]
+    return ans
+
+def slater(a,b,e1,e2):
+    #a, b: 2 bases of CI (in ONV, odd: alpha spin; even: beta spin)
+
+    dist = xordist(a,b)
+    d = len(a)
+    if dist == 0:
+        ans = 0.0
+        for i in range(d):
+            if a[i] == 1:
+                ans += e1s(i,i,e1)
+                for j in range(i):
+                    if a[j] == 1:
+                        ans += e2s(i,j,i,j,e2)
+        return ans
+
+    elif dist == 2:
+        m = xorloc(a,b)
+        n = xorloc(b,a)
+        ans = e1s(m[0],n[0],e1)
+        for i in range(d):
+            if a[i] == 1 and i != m[0] and i != n[0]:
+                ans += e2s(m[0],i,n[0],i,e2)
+        return ans*phase(a,m)*phase(b,n)
+
+    elif dist == 4:
+        m = xorloc(a,b)
+        n = xorloc(b,a)
+        return e2s(m[0],m[1],n[0],n[1],e2)*phase(a,m)*phase(b,n)
+
+    else:
+        return 0.0
+
+def merge(alpha,beta):
+    index = []
+    for a in alpha:
+        for b in beta:
+            tmp = []
+            for i in range(len(a)):
+                tmp += [a[i]]
+                tmp += [b[i]]
+            index += [tmp]
+    return index
 
 def xorloc(a,b):
     #a, b: 2 bases of CI
@@ -76,55 +134,38 @@ def phase(a,ldiff):
         ans = ans % 2
     return (-1)**ans
 
-def slater(a,b,e1,e2):
-    #a, b: 2 bases of CI (in ONV, odd: alpha spin; even: beta spin)
+def direct(C,space,e1,e2):
+    d = e1.shape[0]
+    dim = len(space)
+    ans = np.zeros(dim)
+    Hi = np.zeros(dim)
+    for i in range(dim):
+        for j in range(dim):
+            Hi[j] = slater(space[i],space[j],e1,e2)
+        ans[i] = Hi.dot(C)
 
-    dist = xordist(a,b)
-    d = len(a)
-    if dist == 0:
-        ans = 0.0
-        for i in range(d):
-            if a[i] == 1:
-                ans += e1s(i,i,e1)
-                for j in range(i):
-                    if a[j] == 1:
-                        ans += e2s(i,j,i,j,e2)
-        return ans
+    return ans
 
-    elif dist == 2:
-        m = xorloc(a,b)
-        n = xorloc(b,a)
-        ans = e1s(m[0],n[0],e1)
-        for i in range(d):
-            if a[i] == 1 and i != m[0] and i != n[0]:
-                ans += e2s(m[0],i,n[0],i,e2)
-        return ans*phase(a,m)*phase(b,n)
-
-    elif dist == 4:
-        m = xorloc(a,b)
-        n = xorloc(b,a)
-        return e2s(m[0],m[1],n[0],n[1],e2)*phase(a,m)*phase(b,n)
-
-    else:
-        return 0.0
-
-def davidson(H,V,err,maxIter):
+def davidson(HProd,Da,initVec,err,maxIter):
     #initialization
-    dim = H.shape[0]
+    dim = Da.shape[0]
     numIter = 0
     last = 0.0
-    Da = np.diag(H)
-    HV = H.dot(V)
+    V = initVec.reshape(dim,1)
+    HV = HProd(initVec).reshape(dim,1)
     A = V.T.dot(HV)
 
     #iteration
     while numIter <= maxIter:
-        #print("----------")
-        #print("Iter: %d" % numIter)
+        #print(20*"*")
         if numIter != 0:
             last = ritzVal
         numIter += 1
+        #print("Iter: %d" % numIter)
+        #rank = np.linalg.matrix_rank(V.T.dot(V))
+        #print("Rank of V*V: %d" % rank)
 
+        
         #form ritz value and vector
         eigensolver = np.linalg.eig(A)
         ritzIndex = minIndex(eigensolver[0])
@@ -136,19 +177,22 @@ def davidson(H,V,err,maxIter):
         resVec = HV.dot(rVec) - ritzVal * V.dot(rVec)
         conv = ritzVal - last
         conv1 = np.linalg.norm(resVec)
-        if conv < err and conv > 0.0 - err:
+        #print("norm: %f" % conv1)
+        if conv < err**2 and conv > 0.0 - err**2:
             break
         if conv1 < err:
             break
-        #print("conv: %f" % conv1)
-
-        #expand the search space
-        daVec = resVec / (ritzVal - Da + 1.0e-5)
+        daVec = resVec / (ritzVal - Da + 1.0e-5)    #avoid divided by zero
         for i in V.T:
-            daVec -= i.dot(daVec) * i       
-        daVec /= np.linalg.norm(daVec)
+            daVec -= i.dot(daVec) * i
+        norm = np.linalg.norm(daVec)
+        if norm < err:
+            break
+        #print("norm of daVec %f" % norm)
+        #expand the search space
+        daVec /= norm
         Vi = daVec.reshape(dim,1)
-        HVi = H.dot(Vi)
+        HVi = HProd(daVec).reshape(dim,1)
         Ai = V.T.dot(HVi)
         ai = Vi.T.dot(HVi)
         A = np.vstack([np.hstack([A, Ai]), np.hstack([Ai.T, ai])]) 
@@ -156,60 +200,3 @@ def davidson(H,V,err,maxIter):
         HV = np.hstack([HV, HVi])
 
     return ritzVal
-
-#input
-e1 = np.load("h1e.npy")
-e2 = np.load("h2e.npy")
-d = e1.shape[0]
-ne = d  #ne = alpha + beta
-s = 0   #s = alpha - beta
-
-#form cispace string
-index = []
-alpha = cispace(d, (ne+s)/2)
-beta = cispace(d, (ne-s)/2)
-for a in alpha:
-    for b in beta:
-        tmp = []
-        for i in range(d):
-            tmp += [a[i]]
-            tmp += [b[i]]
-        index += [tmp]
-dim = len(index)
-
-#form Hamitonian
-Ham = np.zeros((dim,dim))
-for i in range(dim):
-    for j in range(i+1):
-        Ham[i][j] = slater(index[i],index[j],e1,e2)
-        Ham[j][i] = Ham[i][j]
-en = min(np.linalg.eig(Ham)[0])
-
-#form initial search space
-salpha = cispace((ne+s)/2+1, (ne+s)/2)
-salpha = [i + (d - len(i)) * [0] for i in salpha]
-sbeta = cispace((ne-s)/2+1, (ne-s)/2)
-sbeta = [i + (d - len(i)) * [0] for i in sbeta]
-sindex = []
-for a in salpha:
-    for b in sbeta:
-        tmp = []
-        for i in range(d):
-            tmp += [a[i]]
-            tmp += [b[i]]
-        sindex += [tmp]
-sdim = len(sindex)
-V = np.zeros((dim,sdim))
-for i in range(sdim):
-    V[index.index(sindex[i])][i] = 1.0
-V1 = np.zeros((dim,1))
-for i in range(1):
-    V1[-i-1][i] = 1.0
-
-#davidson algorithm
-ans = davidson(Ham, V1, 1.0e-8, dim)
-
-#output
-print en
-print ans
-

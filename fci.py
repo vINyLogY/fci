@@ -1,7 +1,5 @@
-#!/usr/bin/env python
 import numpy as np
 import math
-import time
 
 def minIndex(li):
     ans = 0
@@ -23,6 +21,17 @@ def cispace(d,occ):
         ans1 = [i + [1] for i in cispace(d-1,occ-1)]
         ans2 = [i + [0] for i in cispace(d-1,occ)]
         return ans1 + ans2
+
+def merge(alpha,beta):
+    index = []
+    for a in alpha:
+        for b in beta:
+            tmp = []
+            for i in range(len(a)):
+                tmp += [a[i]]
+                tmp += [b[i]]
+            index += [tmp]
+    return index
 
 def xorloc(a,b):
     #a, b: 2 bases of CI
@@ -110,26 +119,25 @@ def slater(a,b,e1,e2):
 
 def davidson(H,V,err,maxIter):
     #initialization
-    dim =len(H)
+    dim = H.shape[0]
     numIter = 0
     last = 0.0
-    Da = np.diag(H)
+    Da = H.diagonal()
     HV = H.dot(V)
     A = V.T.dot(HV)
-    Orth = np.eye(dim)
-    for i in V.T:
-        Vi = i.reshape(dim,1)
-        Orth = Orth.dot(np.eye(dim)-Vi.dot(Vi.T))
 
     #iteration
     while numIter <= maxIter:
-        #print("----------")
-        #print("Iter: %d" % numIter)
+        #print(20*"*")
         if numIter != 0:
             last = ritzVal
         numIter += 1
+        #print("Iter: %d" % numIter)
+        #rank = np.linalg.matrix_rank(V.T.dot(V))
+        #print("Rank of V*V: %d" % rank)
 
-        #form ritz value and ritz vector
+        
+        #form ritz value and vector
         eigensolver = np.linalg.eig(A)
         ritzIndex = minIndex(eigensolver[0])
         ritzVal = eigensolver[0][ritzIndex]
@@ -140,78 +148,27 @@ def davidson(H,V,err,maxIter):
         resVec = HV.dot(rVec) - ritzVal * V.dot(rVec)
         conv = ritzVal - last
         conv1 = np.linalg.norm(resVec)
-        if conv < err and conv > 0.0 - err:
+        #print("norm: %f" % conv1)
+        if conv < err**2 and conv > 0.0 - err**2:
             break
-        #print("conv: %f" % conv)
+        if conv1 < err:
+            break
 
         #expand the search space
-        daVec = resVec / (ritzVal - Da)
-        daVec = Orth.dot(daVec)
-        daVec /= np.linalg.norm(daVec)
+        daVec = resVec / (ritzVal - Da + 1.0e-5)    #avoid divided by zero
+        for i in V.T:
+            daVec -= i.dot(daVec) * i
+        norm = np.linalg.norm(daVec)
+        if norm < err:
+            break
+        #print("norm of daVec %f" % norm)
+        daVec /= norm
         Vi = daVec.reshape(dim,1)
         HVi = H.dot(Vi)
         Ai = V.T.dot(HVi)
         ai = Vi.T.dot(HVi)
-        Orth = Orth.dot(np.eye(dim)-Vi.dot(Vi.T))
         A = np.vstack([np.hstack([A, Ai]), np.hstack([Ai.T, ai])]) 
         V = np.hstack([V, Vi])
         HV = np.hstack([HV, HVi])
 
     return ritzVal
-
-#input
-e1 = np.load("h1e.npy")
-e2 = np.load("h2e.npy")
-d = e1.shape[0]
-ne = d  #ne = alpha + beta
-s = 0   #s = alpha - beta
-
-#form cispace string
-index = []
-alpha = cispace(d, (ne+s)/2)
-beta = cispace(d, (ne-s)/2)
-for a in alpha:
-    for b in beta:
-        tmp = []
-        for i in range(d):
-            tmp += [a[i]]
-            tmp += [b[i]]
-        index += [tmp]
-dim = len(index)
-
-#form Hamitonian
-Ham = np.zeros((dim,dim))
-for i in range(dim):
-    for j in range(i+1):
-        Ham[i][j] = slater(index[i],index[j],e1,e2)
-        Ham[j][i] = Ham[i][j]
-en = min(np.linalg.eig(Ham)[0])
-
-#form initial search space
-salpha = cispace((ne+s)/2+1, (ne+s)/2)
-salpha = [i + (d - len(i)) * [0] for i in salpha]
-sbeta = cispace((ne-s)/2+1, (ne-s)/2)
-sbeta = [i + (d - len(i)) * [0] for i in sbeta]
-sindex = []
-for a in salpha:
-    for b in sbeta:
-        tmp = []
-        for i in range(d):
-            tmp += [a[i]]
-            tmp += [b[i]]
-        sindex += [tmp]
-sdim = len(sindex)
-V = np.zeros((dim,sdim))
-for i in range(sdim):
-    V[index.index(sindex[i])][i] = 1.0
-V1 = np.zeros((dim,3))
-for i in range(3):
-    V1[-i-1][i] = 1.0
-
-#davidson algorithm
-ans = davidson(Ham, V1, 1.0e-9, dim)
-
-#output
-print en
-print ans
-

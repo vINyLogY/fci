@@ -5,6 +5,7 @@ import time
 from numpy.random import rand, randint
 from scipy.sparse.linalg import eigsh
 from scipy.sparse import csc_matrix
+from fci import *
 
 def minIndex(li):
     ans = 0
@@ -49,16 +50,16 @@ def davidson(H,V,err,maxIter):
             break
         if conv1 < err:
             break
-
-        #expand the search space
         daVec = resVec / (ritzVal - Da + 1.0e-5)
         for i in V.T:
             daVec -= i.dot(daVec) * i
         norm = np.linalg.norm(daVec)
         if norm < err:
             break
-        #print("norm of daVec %f" % norm)
         daVec /= norm
+        #print("norm of daVec %f" % norm)
+
+        #expand the search space
         Vi = daVec.reshape(dim,1)
         HVi = H.dot(Vi)
         Ai = V.T.dot(HVi)
@@ -79,8 +80,8 @@ def randmat(dim):
     return A
 
 frac = 0.5
-for i in range(3000):
-    A = randmat(3000)
+for i in range(10):
+    A = randmat(1000)
     A = csc_matrix(A)
     t0 = time.time()
     ep = eigsh(A)
@@ -95,14 +96,12 @@ for i in range(3000):
     rt = t/t_ref
     print("Error = %f" % err)
     #print("relative time = %f" % rt)
-    if err > 1.0 or err < -1.0:
-        print(20*"-")
-        print(ans)
-        print("time = %f" % t)
-        print("norm = %f" % norm)
-        print("num of iter = %d" % numIter)
-        print("Rank of V*V: %d" % rank)
-        print("reference ans = %f" % ans_ref)
-        print("reference time = %f" % t_ref)
-        print(20*"-")
-        break
+    print(20*"-")
+    print(ans)
+    print("time = %f" % t)
+    print("norm = %f" % norm)
+    print("num of iter = %d" % numIter)
+    print("Rank of V*V: %d" % rank)
+    print("reference ans = %f" % ans_ref)
+    print("reference time = %f" % t_ref)
+    print(20*"-")
